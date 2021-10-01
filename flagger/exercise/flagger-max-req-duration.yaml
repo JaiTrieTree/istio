@@ -1,0 +1,63 @@
+---
+
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: go-demo-7
+spec:
+  provider: istio
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: go-demo-7
+  progressDeadlineSeconds: 60
+  autoscalerRef:
+    apiVersion: autoscaling/v2beta1
+    kind: HorizontalPodAutoscaler
+    name: go-demo-7
+  service:
+    port: 80
+    targetPort: 8080
+    gateways:
+    - go-demo-7
+    hosts:
+    - go-demo-7.acme.com
+  analysis:
+    interval: 1m
+    threshold: 3
+    maxWeight: 60
+    stepWeight: 20
+    metrics:
+    - name: request-success-rate
+      threshold: 99
+      interval: 1m
+    - name: latency
+      templateRef:
+        name: latency
+      thresholdRange:
+        max: 1000
+      interval: 1m
+
+---
+
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: latency
+spec:
+  provider:
+    type: prometheus
+    address: http://prometheus.istio-system:9090
+  query: |
+    histogram_quantile(
+        0.99,
+        sum(
+            rate(
+                istio_request_duration_milliseconds_bucket{
+                    reporter="destination",
+                    destination_workload_namespace="{{ namespace }}",
+                    destination_workload=~"{{ target }}"
+                }[{{ interval }}]
+            )
+        ) by (le)
+    )
